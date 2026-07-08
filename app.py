@@ -1,10 +1,7 @@
 from __future__ import annotations
 
-import os
 import sys
-import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog
 
 import streamlit as st
 
@@ -12,39 +9,7 @@ ROOT = Path(__file__).resolve().parent
 sys.path.append(str(ROOT))
 
 
-def pick_file(title: str, filetypes: list[tuple[str, str]]) -> Path | None:
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    path = filedialog.askopenfilename(title=title, filetypes=filetypes)
-    root.destroy()
-    return Path(path).expanduser().resolve() if path else None
-
-
-def pick_folder(title: str) -> Path | None:
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    path = filedialog.askdirectory(title=title)
-    root.destroy()
-    return Path(path).expanduser().resolve() if path else None
-
-
-def open_path(path: Path) -> None:
-    if os.name == "nt":
-        os.startfile(str(path))
-    else:
-        st.info(f"Abre la carpeta manualmente: {path}")
-
-
-if "input_path" not in st.session_state:
-    st.session_state.input_path = ""
-if "template_path" not in st.session_state:
-    st.session_state.template_path = ""
-if "output_dir" not in st.session_state:
-    st.session_state.output_dir = str((ROOT / "salida").resolve())
-
-st.set_page_config(page_title="IES Creator", page_icon="�", layout="wide")
+st.set_page_config(page_title="IES Creator", page_icon="🎓", layout="wide")
 
 st.markdown(
     """
@@ -117,136 +82,90 @@ with tabs[0]:
 with tabs[1]:
     st.markdown('<div class="panel-card"><h3>Feedback DOCX</h3><p>Se leerá un archivo Excel y se generarán documentos Word por alumno.</p></div>', unsafe_allow_html=True)
 
-    input_path = Path(st.session_state.input_path).resolve() if st.session_state.input_path else None
-    output_dir = Path(st.session_state.output_dir).resolve() if st.session_state.output_dir else ROOT / "salida"
-    
     st.markdown("### Archivos")
-    
-    # Archivo Excel
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if st.button("Elegir Excel", use_container_width=True, key="fb_excel"):
-            selected = pick_file(
-                "Selecciona el archivo Excel",
-                [("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")],
-            )
-            if selected:
-                st.session_state.input_path = str(selected)
-                st.rerun()
-    with col2:
-        if input_path and input_path.exists():
-            st.success(f"{input_path}")
-        else:
-            st.warning("Selecciona un archivo Excel")
-    
-    # Carpeta de salida
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if st.button("Elegir salida", use_container_width=True, key="fb_output"):
-            selected = pick_folder("Selecciona la carpeta de resultados")
-            if selected:
-                st.session_state.output_dir = str(selected)
-                st.rerun()
-    with col2:
-        st.info(f"{output_dir}")
-    
+
+    fb_excel = st.file_uploader(
+        "Archivo Excel",
+        type=["xlsx", "xlsm"],
+        key="fb_excel_uploader",
+    )
+
     st.divider()
-    
-    # Botón de generar y abrir carpeta
-    col1, col2, col3 = st.columns([2, 1, 1])
+
+    col1, col2 = st.columns([2, 1])
     with col1:
         if st.button("Generar feedback", use_container_width=True, type="primary", key="btn_gen_feedback"):
-            if not input_path or not input_path.exists():
-                st.error("Necesitas elegir un archivo Excel válido.")
+            if fb_excel is None:
+                st.error("Necesitas subir un archivo Excel válido.")
             else:
-                from tools.feedback_app import run_feedback
-                run_feedback(input_path, output_dir)
-                st.success("Proceso completado.")
-    
+                try:
+                    from tools.feedback_app import run_feedback
+
+                    zip_bytes = run_feedback(fb_excel)
+                    st.session_state.fb_zip = zip_bytes
+                    st.success("Proceso completado.")
+                except Exception as exc:
+                    st.error(f"Error al generar el feedback: {exc}")
+
     with col2:
-        if st.button("Abrir salida", use_container_width=True, key="btn_open_fb"):
-            open_path(output_dir)
-    
-    with col3:
         if st.button("Limpiar", use_container_width=True, key="btn_clear_fb"):
-            st.session_state.input_path = ""
-            st.session_state.output_dir = str((ROOT / "salida").resolve())
+            st.session_state.pop("fb_zip", None)
             st.rerun()
+
+    if st.session_state.get("fb_zip"):
+        st.download_button(
+            "Descargar documentos (ZIP)",
+            data=st.session_state.fb_zip,
+            file_name="feedback.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )
 
 # TAB 2: GENERADOR DE TESTS
 with tabs[2]:
     st.markdown('<div class="panel-card"><h3>Generador de tests</h3><p>Se leerá un Excel con preguntas y se generarán test en Word con códigos QR.</p></div>', unsafe_allow_html=True)
 
-    input_path = Path(st.session_state.input_path).resolve() if st.session_state.input_path else None
-    template_path = Path(st.session_state.template_path).resolve() if st.session_state.template_path else None
-    output_dir = Path(st.session_state.output_dir).resolve() if st.session_state.output_dir else ROOT / "salida"
-    
     st.markdown("### Archivos")
-    
-    # Archivo Excel
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if st.button("Elegir Excel", use_container_width=True, key="test_excel"):
-            selected = pick_file(
-                "Selecciona el archivo Excel con preguntas",
-                [("Excel", "*.xlsx *.xlsm"), ("Todos", "*.*")],
-            )
-            if selected:
-                st.session_state.input_path = str(selected)
-                st.rerun()
-    with col2:
-        if input_path and input_path.exists():
-            st.success(f"{input_path}")
-        else:
-            st.warning("Selecciona un archivo Excel")
-    
-    # Plantilla Word
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if st.button("Elegir plantilla", use_container_width=True, key="test_word"):
-            selected = pick_file("Selecciona la plantilla Word", [("Word", "*.docx"), ("Todos", "*.*")])
-            if selected:
-                st.session_state.template_path = str(selected)
-                st.rerun()
-    with col2:
-        if template_path and template_path.exists():
-            st.success(f"{template_path}")
-        else:
-            st.warning("Selecciona una plantilla Word")
-    
-    # Carpeta de salida
-    col1, col2 = st.columns([1, 2])
-    with col1:
-        if st.button("Elegir salida", use_container_width=True, key="test_output"):
-            selected = pick_folder("Selecciona la carpeta de resultados")
-            if selected:
-                st.session_state.output_dir = str(selected)
-                st.rerun()
-    with col2:
-        st.info(f"{output_dir}")
-    
+
+    test_excel = st.file_uploader(
+        "Archivo Excel con preguntas",
+        type=["xlsx", "xlsm"],
+        key="test_excel_uploader",
+    )
+    test_template = st.file_uploader(
+        "Plantilla Word (opcional, se usará una por defecto si no se sube)",
+        type=["docx"],
+        key="test_template_uploader",
+    )
+    num_students = st.number_input("Número de alumnos", min_value=1, max_value=200, value=5, step=1)
+
     st.divider()
-    
-    # Botón de generar y abrir carpeta
-    col1, col2, col3 = st.columns([2, 1, 1])
+
+    col1, col2 = st.columns([2, 1])
     with col1:
         if st.button("Generar tests", use_container_width=True, type="primary", key="btn_gen_tests"):
-            if not input_path or not input_path.exists():
-                st.error("Necesitas elegir un archivo Excel válido.")
-            elif not template_path or not template_path.exists():
-                st.error("Necesitas elegir una plantilla Word válida.")
+            if test_excel is None:
+                st.error("Necesitas subir un archivo Excel válido.")
             else:
-                from tools.test_app import run_test_generation
-                run_test_generation(input_path, output_dir, template_path)
-                st.success("Proceso completado.")
-    
+                try:
+                    from tools.test_app import run_test_generation
+
+                    zip_bytes = run_test_generation(test_excel, test_template, num_students=int(num_students))
+                    st.session_state.test_zip = zip_bytes
+                    st.success("Proceso completado.")
+                except Exception as exc:
+                    st.error(f"Error al generar los tests: {exc}")
+
     with col2:
-        if st.button("Abrir salida", use_container_width=True, key="btn_open_tests"):
-            open_path(output_dir)
-    
-    with col3:
         if st.button("Limpiar", use_container_width=True, key="btn_clear_tests"):
-            st.session_state.input_path = ""
-            st.session_state.template_path = ""
-            st.session_state.output_dir = str((ROOT / "salida").resolve())
+            st.session_state.pop("test_zip", None)
             st.rerun()
+
+    if st.session_state.get("test_zip"):
+        st.download_button(
+            "Descargar tests (ZIP)",
+            data=st.session_state.test_zip,
+            file_name="tests.zip",
+            mime="application/zip",
+            use_container_width=True,
+        )

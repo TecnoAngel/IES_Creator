@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import re
+from io import BytesIO
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 from typing import Any
 
-import streamlit as st
-import win32com.client  # type: ignore
-import xlwings as xw
+from docx import Document
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Cm
+from openpyxl import load_workbook
 
 
 def safe_filename(name: str) -> str:
@@ -27,84 +29,93 @@ def _read_source_bytes(source: Any) -> bytes:
     raise TypeError("El origen debe ser una ruta o un archivo subido")
 
 
-def run_feedback(source: Any, output_dir: Path | str) -> None:
-    output_dir = Path(output_dir).expanduser().resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
+def _is_zero(value: Any) -> bool:
+    try:
+        return float(value) == 0.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _set_cell_background(cell, color_hex: str) -> None:
+    tcPr = cell._tc.get_or_add_tcPr()
+    shd = OxmlElement("w:shd")
+    shd.set(qn("w:val"), "clear")
+    shd.set(qn("w:color"), "auto")
+    shd.set(qn("w:fill"), color_hex)
+    tcPr.append(shd)
+
+
+def _read_rows(payload: bytes) -> list[tuple]:
+    wb = load_workbook(BytesIO(payload), data_only=True)
+    sh = wb.active
+    return list(sh.iter_rows(values_only=True))
+
+
+def build_student_docx(student: str, activity_label: str, grade: Any, item_headers: list[str], values: list[Any]) -> bytes:
+    doc = Document()
+
+    p = doc.add_paragraph()
+    run = p.add_run(student)
+    run.bold = True
+
+    last_row = 1 + len(item_headers)
+    table = doc.add_table(rows=last_row, cols=2)
+    table.style = "Table Grid"
+    table.autofit = False
+
+    header_row = table.rows[0]
+    header_row.cells[0].text = activity_label
+    header_row.cells[1].text = "" if grade is None else str(grade)
+    for cell in header_row.cells:
+        for run in cell.paragraphs[0].runs:
+            run.bold = True
+
+    for i, (label, value) in enumerate(zip(item_headers, values), start=1):
+        row = table.rows[i]
+        row.cells[0].text = label
+        row.cells[1].text = "" if value is None else str(value)
+        color = "FFC0C0" if _is_zero(value) else "C0FFC0"
+        _set_cell_background(row.cells[1], color)
+
+    for row in table.rows:
+        row.cells[0].width = Cm(12)
+        row.cells[1].width = Cm(2.5)
+
+    buffer = BytesIO()
+    doc.save(buffer)
+    return buffer.getvalue()
+
+
+def run_feedback(source: Any) -> bytes:
+    """Genera un ZIP en memoria con un .docx de feedback por alumno."""
+    import zipfile
 
     payload = _read_source_bytes(source)
-    with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
-        tmp.write(payload)
-        temp_path = Path(tmp.name)
+    data = _read_rows(payload)
 
-    app = xw.App(visible=False, add_book=False)
-    word = win32com.client.Dispatch("Word.Application")
-    word.Visible = False
-    word.DisplayAlerts = 0
+    if not data or len(data) < 2 or len(data[0]) < 3:
+        raise ValueError("La tabla debe tener encabezados y al menos 3 columnas.")
 
-    try:
-        wb = app.books.open(str(temp_path))
-        try:
-            sh = wb.sheets.active
-            data = sh.used_range.value
-            if not data or len(data) < 2 or len(data[0]) < 3:
-                raise ValueError("La tabla debe tener encabezados y al menos 3 columnas.")
+    headers = data[0]
+    activity_label = str(headers[0]).strip() if headers[0] is not None else ""
+    item_headers = [("" if h is None else str(h).strip()) for h in headers[2:]]
 
-            headers = data[0]
-            activity_label = str(headers[0]).strip() if headers[0] is not None else ""
-            item_headers = [("" if h is None else str(h).strip()) for h in headers[2:]]
+    zip_buffer = BytesIO()
+    generated = 0
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+        for r in data[1:]:
+            if not r or r[0] is None or str(r[0]).strip() == "":
+                continue
 
-            tmp_wb = app.books.add()
-            tmp_sh = tmp_wb.sheets[0]
-            tmp_sh.range("A:A").column_width = 70
-            tmp_sh.range("B:B").column_width = 12
-            tmp_sh.range("A:B").api.VerticalAlignment = -4160
+            student = str(r[0]).strip()
+            grade = r[1]
+            values = (list(r[2:]) + [None] * len(item_headers))[: len(item_headers)]
 
-            for r in data[1:]:
-                if not r or r[0] is None or str(r[0]).strip() == "":
-                    continue
+            docx_bytes = build_student_docx(student, activity_label, grade, item_headers, values)
+            zf.writestr(f"{safe_filename(student)}.docx", docx_bytes)
+            generated += 1
 
-                student = str(r[0]).strip()
-                grade = r[1]
-                values = (r[2:] + [None] * len(item_headers))[:len(item_headers)]
+    if generated == 0:
+        raise ValueError("No se ha encontrado ningún alumno con datos en el Excel.")
 
-                tmp_sh.clear()
-                tmp_sh.range("A1").value = activity_label
-                tmp_sh.range("B1").value = grade
-
-                for i, (h, v) in enumerate(zip(item_headers, values), start=2):
-                    tmp_sh.range(f"A{i}").value = h
-                    tmp_sh.range(f"B{i}").value = v
-
-                last_row = 1 + len(item_headers)
-                rng = tmp_sh.range(f"A1:B{last_row}")
-                rng.api.Borders.Weight = 2
-                tmp_sh.range("A1:B1").api.Font.Bold = True
-
-                for i in range(2, last_row + 1):
-                    v = tmp_sh.range(f"B{i}").value
-                    cell = tmp_sh.range(f"B{i}").api
-                    if isinstance(v, (int, float)) and float(v) == 0.0:
-                        cell.Interior.Color = 0xC0C0FF
-                    else:
-                        cell.Interior.Color = 0xC0FFC0
-
-                doc = word.Documents.Add()
-                p = doc.Paragraphs.Add()
-                p.Range.Text = student
-                p.Range.Font.Bold = True
-                p.Range.InsertParagraphAfter()
-                rng.api.Copy()
-                doc.Paragraphs.Add().Range.PasteExcelTable(False, False, True)
-
-                docx_path = output_dir / f"{safe_filename(student)}.docx"
-                doc.SaveAs2(str(docx_path))
-                doc.Close(False)
-
-            tmp_wb.close()
-            st.success(f"Se han generado los documentos en {output_dir}")
-        finally:
-            wb.close()
-    finally:
-        app.quit()
-        word.Quit()
-        temp_path.unlink(missing_ok=True)
+    return zip_buffer.getvalue()
