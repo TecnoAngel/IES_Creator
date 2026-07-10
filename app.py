@@ -72,14 +72,25 @@ st.markdown(
 
 st.markdown("")
 
-tabs = st.tabs(["Inicio", "Feedback DOCX", "Generador de tests"])
+# st.tabs no conserva la pestaña activa entre reruns (cada clic en un botón
+# devuelve la vista a la primera pestaña), así que la navegación se hace con
+# un widget normal atado a session_state para que sea persistente.
+PAGES = ["Inicio", "Feedback DOCX", "Generador de tests", "Sesiones por trimestre"]
+page = st.segmented_control(
+    "Navegación",
+    PAGES,
+    default=PAGES[0],
+    key="active_page",
+    required=True,
+    label_visibility="collapsed",
+)
 
-# TAB 0: INICIO
-with tabs[0]:
-    st.markdown('<div class="panel-card"><h3>Bienvenido</h3><p>Selecciona <strong>Feedback DOCX</strong> para generar documentos de feedback personalizados para cada alumno a partir de un archivo Excel.</p><p>O selecciona <strong>Generador de tests</strong> para crear tests en Word con códigos QR a partir de un archivo Excel.</p></div>', unsafe_allow_html=True)
+# PÁGINA: INICIO
+if page == "Inicio":
+    st.markdown('<div class="panel-card"><h3>Bienvenido</h3><p>Elige una sección arriba para empezar.</p></div>', unsafe_allow_html=True)
 
-# TAB 1: FEEDBACK DOCX
-with tabs[1]:
+# PÁGINA: FEEDBACK DOCX
+elif page == "Feedback DOCX":
     st.markdown('<div class="panel-card"><h3>Feedback DOCX</h3><p>Se leerá un archivo Excel y se generarán documentos Word por alumno.</p></div>', unsafe_allow_html=True)
 
     st.markdown("### Archivos")
@@ -121,8 +132,8 @@ with tabs[1]:
             use_container_width=True,
         )
 
-# TAB 2: GENERADOR DE TESTS
-with tabs[2]:
+# PÁGINA: GENERADOR DE TESTS
+elif page == "Generador de tests":
     st.markdown('<div class="panel-card"><h3>Generador de tests</h3><p>Se leerá un Excel con preguntas y se generarán test en Word con códigos QR.</p></div>', unsafe_allow_html=True)
 
     st.markdown("### Archivos")
@@ -169,3 +180,148 @@ with tabs[2]:
             mime="application/zip",
             use_container_width=True,
         )
+
+# PÁGINA: SESIONES POR TRIMESTRE
+elif page == "Sesiones por trimestre":
+    st.markdown('<div class="panel-card"><h3>Sesiones por trimestre</h3><p>Estima cuántas sesiones lectivas tiene una materia en cada trimestre, a partir del calendario escolar oficial de Castilla y León.</p></div>', unsafe_allow_html=True)
+
+    from tools.sessions_calculator import (
+        DEFAULT_CALENDAR_URL,
+        approx_sessions,
+        default_trimester_ranges,
+        fetch_school_calendar,
+        free_weeks_in_range,
+        trimester_index_for_date,
+    )
+
+    st.caption(
+        "Los selectores de fecha muestran el calendario según el idioma configurado en tu navegador; "
+        "con el navegador en español la semana ya empieza en lunes."
+    )
+
+    st.markdown("### Calendario escolar oficial")
+    calendar_url = st.text_input("URL del calendario escolar (JCyL)", value=DEFAULT_CALENDAR_URL, key="calendar_url")
+
+    if st.button("Cargar calendario oficial", key="btn_load_calendar"):
+        try:
+            calendar = fetch_school_calendar(calendar_url)
+            st.session_state.school_calendar = calendar
+            st.session_state.trimester_dates = dict(zip(("t1", "t2", "t3"), default_trimester_ranges(calendar)))
+            st.success("Calendario cargado correctamente.")
+        except Exception as exc:
+            st.error(f"No se ha podido leer el calendario: {exc}")
+
+    calendar = st.session_state.get("school_calendar")
+
+    if calendar is None:
+        st.info("Carga el calendario oficial para continuar.")
+    else:
+        st.markdown(
+            f"**Curso ESO:** {calendar.course_start:%d/%m/%Y} — {calendar.course_end:%d/%m/%Y}  \n"
+            f"**Vacaciones de Navidad:** {min(calendar.christmas_days):%d/%m/%Y} — {max(calendar.christmas_days):%d/%m/%Y} "
+            f"({len(calendar.christmas_days)} días)  \n"
+            f"**Vacaciones de Semana Santa:** {min(calendar.easter_days):%d/%m/%Y} — {max(calendar.easter_days):%d/%m/%Y} "
+            f"({len(calendar.easter_days)} días)"
+        )
+
+        st.divider()
+        st.markdown("### Trimestres")
+        st.caption("Fechas propuestas automáticamente en torno a Navidad y Semana Santa. Puedes ajustarlas.")
+
+        defaults = st.session_state.get("trimester_dates", {})
+        cols = st.columns(3)
+        trimester_ranges = []
+        for col, key, label in zip(cols, ("t1", "t2", "t3"), ("1º trimestre", "2º trimestre", "3º trimestre")):
+            with col:
+                st.markdown(f"**{label}**")
+                default_start, default_end = defaults.get(key, (calendar.course_start, calendar.course_end))
+                start = st.date_input(
+                    "Inicio", value=default_start,
+                    min_value=calendar.course_start, max_value=calendar.course_end, key=f"{key}_start",
+                )
+                end = st.date_input(
+                    "Fin", value=default_end,
+                    min_value=calendar.course_start, max_value=calendar.course_end, key=f"{key}_end",
+                )
+                trimester_ranges.append((start, end))
+
+        st.divider()
+        st.markdown("### Otros festivos y días no lectivos")
+        st.caption(
+            "Además de Navidad y Semana Santa, marca qué festivos oficiales quieres restar de las semanas "
+            "lectivas (si caen en mitad de la semana, esa semana cuenta como incompleta)."
+        )
+
+        extra_holiday_days: set = set()
+        if not calendar.other_holidays:
+            st.caption("No se han encontrado más festivos en el calendario cargado.")
+        else:
+            for i, group in enumerate(calendar.other_holidays):
+                date_range = (
+                    f"{group.start:%d/%m/%Y}"
+                    if group.start == group.end
+                    else f"{group.start:%d/%m/%Y} – {group.end:%d/%m/%Y}"
+                )
+                label = f"{group.name} ({date_range}, {len(group.days)} día{'s' if len(group.days) != 1 else ''})"
+                checked = st.checkbox(label, value=True, key=f"holiday_{i}")
+                if checked:
+                    extra_holiday_days |= group.days
+
+        st.divider()
+        st.markdown("### Fiesta local")
+        st.caption(
+            "Cada localidad tiene su(s) propia(s) fiesta(s) local(es), que no aparecen en el calendario "
+            "autonómico. Actívala e indica su fecha para restar ese día del trimestre correspondiente."
+        )
+
+        use_local_holiday = st.checkbox("Añadir fiesta local", value=False, key="use_local_holiday")
+        local_holiday_day = None
+        if use_local_holiday:
+            local_holiday_day = st.date_input(
+                "Fecha de la fiesta local",
+                value=calendar.course_start,
+                min_value=calendar.course_start,
+                max_value=calendar.course_end,
+                key="local_holiday_date",
+            )
+            idx = trimester_index_for_date(local_holiday_day, trimester_ranges)
+            if idx is None:
+                st.warning("Esa fecha no cae dentro de ninguno de los trimestres definidos arriba.")
+            else:
+                st.caption(f"Se restará del {idx + 1}º trimestre.")
+
+        st.divider()
+        st.markdown("### Materia")
+        col1, col2 = st.columns(2)
+        with col1:
+            weekly_hours = st.selectbox(
+                "Horas semanales de la materia",
+                options=list(range(1, 11)),
+                index=2,
+                key="weekly_hours",
+            )
+        with col2:
+            safety_pct = st.slider(
+                "Factor de seguridad (% de sesiones que se prevén perder: excursiones, fiestas...)",
+                min_value=0, max_value=50, value=15, step=1, key="safety_factor",
+            )
+        safety_factor = safety_pct / 100
+
+        st.divider()
+        st.markdown("### Resultado")
+
+        total_sessions = 0.0
+        labels = ("1º trimestre", "2º trimestre", "3º trimestre")
+        for t_idx, (label, (start, end)) in enumerate(zip(labels, trimester_ranges)):
+            if end < start:
+                st.warning(f"{label}: la fecha de fin es anterior a la de inicio.")
+                continue
+            holiday_days = calendar.holiday_days | extra_holiday_days
+            if use_local_holiday and local_holiday_day is not None and t_idx == trimester_index_for_date(local_holiday_day, trimester_ranges):
+                holiday_days = holiday_days | {local_holiday_day}
+            weeks = free_weeks_in_range(start, end, holiday_days)
+            sessions = approx_sessions(weeks, weekly_hours, safety_factor)
+            total_sessions += sessions
+            st.markdown(f"**{label}:** {weeks:.1f} semanas netas → **{sessions:.0f} sesiones aprox.**")
+
+        st.markdown(f"#### Total curso: **{total_sessions:.0f} sesiones aprox.**")
