@@ -64,7 +64,7 @@ st.markdown(
     <div class="topbar">
         <div style="font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.18em; opacity: 0.9; margin-bottom: 0.25rem;">Panel de profesor</div>
         <div class="topbar-title">IES Creator</div>
-        <div class="topbar-sub">Herramientas para preparar materiales y feedback con un flujo más ordenado.</div>
+        <div class="topbar-sub">Mi cajita de utilidades.</div>
     </div>
     """,
     unsafe_allow_html=True,
@@ -75,7 +75,7 @@ st.markdown("")
 # st.tabs no conserva la pestaña activa entre reruns (cada clic en un botón
 # devuelve la vista a la primera pestaña), así que la navegación se hace con
 # un widget normal atado a session_state para que sea persistente.
-PAGES = ["Inicio", "Feedback DOCX", "Generador de tests", "Sesiones por trimestre"]
+PAGES = ["Inicio", "Feedback DOCX", "Generador de tests", "Sesiones por trimestre", "Programación de aula"]
 page = st.segmented_control(
     "Navegación",
     PAGES,
@@ -325,3 +325,51 @@ elif page == "Sesiones por trimestre":
             st.markdown(f"**{label}:** {weeks:.1f} semanas netas → **{sessions:.0f} sesiones aprox.**")
 
         st.markdown(f"#### Total curso: **{total_sessions:.0f} sesiones aprox.**")
+
+# PÁGINA: PROGRAMACIÓN DE AULA
+elif page == "Programación de aula":
+    st.markdown('<div class="panel-card"><h3>Programación de aula</h3><p>Se leerá un Excel con los datos del grupo y las situaciones de aprendizaje, y se generará el documento Word de la programación de aula.</p></div>', unsafe_allow_html=True)
+
+    st.markdown("### Archivos")
+
+    pa_excel = st.file_uploader(
+        "Excel de datos (hojas 'Datos generales' y 'Situaciones de aprendizaje')",
+        type=["xlsx", "xlsm"],
+        key="pa_excel_uploader",
+    )
+    pa_template = st.file_uploader(
+        "Plantilla Word (opcional, se usará la plantilla por defecto si no se sube)",
+        type=["docx"],
+        key="pa_template_uploader",
+    )
+
+    st.divider()
+
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        if st.button("Generar programación", use_container_width=True, type="primary", key="btn_gen_pa"):
+            if pa_excel is None:
+                st.error("Necesitas subir el Excel de datos.")
+            else:
+                try:
+                    from tools.programacion_aula import run_programacion_aula
+
+                    docx_bytes = run_programacion_aula(pa_excel, pa_template)
+                    st.session_state.pa_docx = docx_bytes
+                    st.success("Proceso completado.")
+                except Exception as exc:
+                    st.error(f"Error al generar la programación: {exc}")
+
+    with col2:
+        if st.button("Limpiar", use_container_width=True, key="btn_clear_pa"):
+            st.session_state.pop("pa_docx", None)
+            st.rerun()
+
+    if st.session_state.get("pa_docx"):
+        st.download_button(
+            "Descargar programación (Word)",
+            data=st.session_state.pa_docx,
+            file_name="programacion_aula.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+        )
