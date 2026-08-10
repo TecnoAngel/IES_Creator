@@ -1,0 +1,14 @@
+# Bytecode compilado de Python: binario regenerable, no debe versionarse
+__pycache__/
+*.pyc
+
+# Salida generada / archivos de prueba: no se sube nada de aquí
+salida/
+
+# Plantillas: se versionan las 3 plantillas por defecto ya incluidas;
+# cualquier plantilla nueva que añadas aquí no se subirá sola
+# (usa "git add -f <archivo>" si alguna vez quieres versionar una nueva a propósito)
+templates/*
+!templates/programacion_aula_datos_template.xlsx
+!templates/programacion_aula_template.docx
+!templates/test_template_INI.docx

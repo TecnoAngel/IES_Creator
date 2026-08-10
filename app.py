@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parent
 sys.path.append(str(ROOT))
@@ -91,7 +92,7 @@ if page == "Inicio":
 
 # PÁGINA: FEEDBACK DOCX
 elif page == "Feedback DOCX":
-    st.markdown('<div class="panel-card"><h3>Feedback DOCX</h3><p>Se leerá un archivo Excel y se generarán documentos Word por alumno.</p></div>', unsafe_allow_html=True)
+    st.markdown('<div class="panel-card"><h3>Feedback DOCX</h3><p>Se leerá un archivo Excel y se generará el feedback por alumno: como documentos Word para descargar, o como HTML para copiar y pegar directamente en una plataforma web.</p></div>', unsafe_allow_html=True)
 
     st.markdown("### Archivos")
 
@@ -103,34 +104,62 @@ elif page == "Feedback DOCX":
 
     st.divider()
 
-    col1, col2 = st.columns([2, 1])
-    with col1:
-        if st.button("Generar feedback", use_container_width=True, type="primary", key="btn_gen_feedback"):
-            if fb_excel is None:
-                st.error("Necesitas subir un archivo Excel válido.")
-            else:
-                try:
-                    from tools.feedback_app import run_feedback
+    fb_modo = st.radio(
+        "¿Qué quieres generar?",
+        ["Documentos Word", "HTML para copiar y pegar"],
+        horizontal=True,
+        key="fb_modo",
+    )
 
-                    zip_bytes = run_feedback(fb_excel)
-                    st.session_state.fb_zip = zip_bytes
-                    st.success("Proceso completado.")
-                except Exception as exc:
-                    st.error(f"Error al generar el feedback: {exc}")
+    if fb_modo == "Documentos Word":
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            if st.button("Generar feedback", use_container_width=True, type="primary", key="btn_gen_feedback"):
+                if fb_excel is None:
+                    st.error("Necesitas subir un archivo Excel válido.")
+                else:
+                    try:
+                        from tools.feedback_app import run_feedback
 
-    with col2:
-        if st.button("Limpiar", use_container_width=True, key="btn_clear_fb"):
-            st.session_state.pop("fb_zip", None)
-            st.rerun()
+                        zip_bytes = run_feedback(fb_excel)
+                        st.session_state.fb_zip = zip_bytes
+                        st.success("Proceso completado.")
+                    except Exception as exc:
+                        st.error(f"Error al generar el feedback: {exc}")
 
-    if st.session_state.get("fb_zip"):
-        st.download_button(
-            "Descargar documentos (ZIP)",
-            data=st.session_state.fb_zip,
-            file_name="feedback.zip",
-            mime="application/zip",
-            use_container_width=True,
+        with col2:
+            if st.button("Limpiar", use_container_width=True, key="btn_clear_fb"):
+                st.session_state.pop("fb_zip", None)
+                st.rerun()
+
+        if st.session_state.get("fb_zip"):
+            st.download_button(
+                "Descargar documentos (ZIP)",
+                data=st.session_state.fb_zip,
+                file_name="feedback.zip",
+                mime="application/zip",
+                use_container_width=True,
+            )
+
+    else:
+        st.caption(
+            "Escribe (opcionalmente) una introducción general con formato básico, y pulsa el botón "
+            "de cada alumno para copiar al portapapeles la introducción + su rúbrica en HTML."
         )
+
+        students = []
+        if fb_excel is not None:
+            try:
+                from tools.feedback_app import read_students_html
+
+                students = read_students_html(fb_excel)
+                st.success(f"{len(students)} alumno(s) detectado(s).")
+            except Exception as exc:
+                st.error(f"Error al leer el Excel: {exc}")
+
+        from tools.feedback_app import build_component_html
+
+        components.html(build_component_html(students), height=700, scrolling=True)
 
 # PÁGINA: GENERADOR DE TESTS
 elif page == "Generador de tests":
