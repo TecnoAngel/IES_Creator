@@ -248,14 +248,10 @@ elif page == "Generador de tests":
 
     if st.session_state.get("qr_show_result") and st.session_state.get("qr_letters"):
         letters = st.session_state.qr_letters
-        st.markdown(
-            "**Respuestas leídas:** "
-            + " | ".join(f"{i}: {letter}" for i, letter in enumerate(letters, start=1))
-        )
 
         from tools.test_app import build_tts_component_html
 
-        components.html(build_tts_component_html(letters), height=260, scrolling=True)
+        components.html(build_tts_component_html(letters), height=420, scrolling=True)
 
 # PÁGINA: SESIONES POR TRIMESTRE
 elif page == "Sesiones por trimestre":

@@ -240,7 +240,16 @@ _TTS_COMPONENT_TEMPLATE = r"""
       margin-top: 12px; font-size: 14px; font-weight: 600; color: #333333;
       min-height: 20px;
     }
-    #tts-list { margin-top: 10px; font-size: 13px; color: #555555; line-height: 1.6; }
+    #tts-list {
+      margin-top: 10px; max-height: 260px; overflow-y: auto;
+      border: 1px solid #e0e0e0; border-radius: 8px;
+    }
+    .tts-row {
+      padding: 8px 14px; font-size: 14px; color: #333333;
+      border-top: 1px solid #eeeeee;
+    }
+    .tts-row:first-child { border-top: none; }
+    .tts-row.tts-active { background-color: #eef0fd; font-weight: 700; color: #4c4fd8; }
   </style>
 
   <div id="tts-controls">
@@ -267,16 +276,28 @@ _TTS_COMPONENT_TEMPLATE = r"""
     rateLabel.textContent = parseFloat(rateInput.value).toFixed(1) + 'x';
   });
 
+  function ttsHighlightRow(idx) {
+    var rows = document.querySelectorAll('.tts-row');
+    rows.forEach(function (row) { row.classList.remove('tts-active'); });
+    var row = document.getElementById('tts-row-' + idx);
+    if (row) {
+      row.classList.add('tts-active');
+      row.scrollIntoView({ block: 'nearest' });
+    }
+  }
+
   function ttsSpeakNext() {
     if (!ttsPlaying || ttsIndex >= TTS_PHRASES.length) {
       if (ttsIndex >= TTS_PHRASES.length) {
         document.getElementById('tts-status').textContent = 'Terminado.';
+        ttsHighlightRow(-1);
       }
       ttsPlaying = false;
       return;
     }
     var phrase = TTS_PHRASES[ttsIndex];
     document.getElementById('tts-status').textContent = phrase;
+    ttsHighlightRow(ttsIndex);
     var utter = new SpeechSynthesisUtterance(phrase);
     utter.lang = 'es-ES';
     utter.rate = parseFloat(rateInput.value);
@@ -302,6 +323,7 @@ _TTS_COMPONENT_TEMPLATE = r"""
     ttsPlaying = false;
     window.speechSynthesis.cancel();
     document.getElementById('tts-status').textContent = 'Detenido.';
+    ttsHighlightRow(-1);
   });
 </script>
 """
@@ -309,9 +331,12 @@ _TTS_COMPONENT_TEMPLATE = r"""
 
 def build_tts_component_html(letters: list[str]) -> str:
     """Componente de lectura en voz alta (Web Speech API del navegador) de las
-    respuestas decodificadas del QR, con control de ritmo."""
+    respuestas decodificadas del QR, en un listado scrolleable, con control de
+    ritmo y resaltado de la fila que se está leyendo en cada momento."""
     phrases = [f"Respuesta número {i}: {letter}" for i, letter in enumerate(letters, start=1)]
-    phrases_html = " &middot; ".join(phrases)
+    phrases_html = "".join(
+        f'<div class="tts-row" id="tts-row-{idx}">{phrase}</div>' for idx, phrase in enumerate(phrases)
+    )
 
     html_out = _TTS_COMPONENT_TEMPLATE
     html_out = html_out.replace("__PHRASES_JSON__", json.dumps(phrases))
