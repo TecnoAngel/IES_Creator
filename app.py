@@ -210,6 +210,25 @@ elif page == "Generador de tests":
             use_container_width=True,
         )
 
+    st.divider()
+    st.markdown("### Leer QR y escuchar las respuestas")
+    st.caption("Escanea o sube la foto del QR de un test corregido para que te lea en voz alta las respuestas, a un ritmo ajustable.")
+
+    qr_source = st.camera_input("Escanear con la cámara", key="qr_camera")
+    if qr_source is None:
+        qr_source = st.file_uploader("...o sube una foto del QR", type=["png", "jpg", "jpeg"], key="qr_uploader")
+
+    if qr_source is not None:
+        try:
+            from tools.test_app import build_tts_component_html, decode_answers_from_qr_payload, decode_qr_image
+
+            payload = decode_qr_image(qr_source.getvalue())
+            letters = decode_answers_from_qr_payload(payload)
+            st.success(f"QR leído: {len(letters)} respuesta(s).")
+            components.html(build_tts_component_html(letters), height=260, scrolling=True)
+        except Exception as exc:
+            st.error(f"Error al leer el QR: {exc}")
+
 # PÁGINA: SESIONES POR TRIMESTRE
 elif page == "Sesiones por trimestre":
     st.markdown('<div class="panel-card"><h3>Sesiones por trimestre</h3><p>Estima cuántas sesiones lectivas tiene una materia en cada trimestre, a partir del calendario escolar oficial de Castilla y León.</p></div>', unsafe_allow_html=True)
