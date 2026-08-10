@@ -76,7 +76,7 @@ st.markdown("")
 # st.tabs no conserva la pestaña activa entre reruns (cada clic en un botón
 # devuelve la vista a la primera pestaña), así que la navegación se hace con
 # un widget normal atado a session_state para que sea persistente.
-PAGES = ["Inicio", "Feedback DOCX", "Generador de tests", "Sesiones por trimestre", "Programación de aula"]
+PAGES = ["Inicio", "Feedback", "Generador de tests", "Sesiones por trimestre", "Programación de aula"]
 page = st.segmented_control(
     "Navegación",
     PAGES,
