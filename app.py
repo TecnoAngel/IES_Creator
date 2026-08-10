@@ -91,8 +91,8 @@ if page == "Inicio":
     st.markdown('<div class="panel-card"><h3>Bienvenido</h3><p>Elige una sección arriba para empezar.</p></div>', unsafe_allow_html=True)
 
 # PÁGINA: FEEDBACK DOCX
-elif page == "Feedback DOCX":
-    st.markdown('<div class="panel-card"><h3>Feedback DOCX</h3><p>Se leerá un archivo Excel y se generará el feedback por alumno: como documentos Word para descargar, o como HTML para copiar y pegar directamente en una plataforma web.</p></div>', unsafe_allow_html=True)
+elif page == "Feedback":
+    st.markdown('<div class="panel-card"><h3>Feedback</h3><p>Se leerá un archivo Excel y se generará el feedback por alumno: como documentos Word para descargar, o como HTML para copiar y pegar directamente en una plataforma web.</p></div>', unsafe_allow_html=True)
 
     st.markdown("### Archivos")
 
