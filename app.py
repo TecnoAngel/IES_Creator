@@ -212,22 +212,50 @@ elif page == "Generador de tests":
 
     st.divider()
     st.markdown("### Leer QR y escuchar las respuestas")
-    st.caption("Escanea o sube la foto del QR de un test corregido para que te lea en voz alta las respuestas, a un ritmo ajustable.")
+    st.caption("Escanea el QR de un test corregido para guardar sus respuestas, y léelas después cuando quieras (con opción de escucharlas en voz alta a un ritmo ajustable).")
 
-    qr_source = st.camera_input("Escanear con la cámara", key="qr_camera")
-    if qr_source is None:
-        qr_source = st.file_uploader("...o sube una foto del QR", type=["png", "jpg", "jpeg"], key="qr_uploader")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📷 Escanear código", use_container_width=True, key="btn_qr_scan"):
+            st.session_state.qr_scanning = True
+            st.session_state.qr_show_result = False
+    with col2:
+        if st.button(
+            "🔊 Leer últimas respuestas",
+            use_container_width=True,
+            key="btn_qr_show",
+            disabled=not st.session_state.get("qr_letters"),
+        ):
+            st.session_state.qr_show_result = True
 
-    if qr_source is not None:
-        try:
-            from tools.test_app import build_tts_component_html, decode_answers_from_qr_payload, decode_qr_image
+    if st.session_state.get("qr_scanning"):
+        qr_photo = st.camera_input("Encuadra el QR y haz la foto", key="qr_camera")
+        qr_uploaded = st.file_uploader("...o sube una foto del QR", type=["png", "jpg", "jpeg"], key="qr_uploader")
+        qr_source = qr_photo if qr_photo is not None else qr_uploaded
 
-            payload = decode_qr_image(qr_source.getvalue())
-            letters = decode_answers_from_qr_payload(payload)
-            st.success(f"QR leído: {len(letters)} respuesta(s).")
-            components.html(build_tts_component_html(letters), height=260, scrolling=True)
-        except Exception as exc:
-            st.error(f"Error al leer el QR: {exc}")
+        if qr_source is not None:
+            try:
+                from tools.test_app import decode_answers_from_qr_payload, decode_qr_image
+
+                payload = decode_qr_image(qr_source.getvalue())
+                letters = decode_answers_from_qr_payload(payload)
+                st.session_state.qr_letters = letters
+                st.session_state.qr_scanning = False
+                st.session_state.qr_show_result = True
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Error al leer el QR: {exc}")
+
+    if st.session_state.get("qr_show_result") and st.session_state.get("qr_letters"):
+        letters = st.session_state.qr_letters
+        st.markdown(
+            "**Respuestas leídas:** "
+            + " | ".join(f"{i}: {letter}" for i, letter in enumerate(letters, start=1))
+        )
+
+        from tools.test_app import build_tts_component_html
+
+        components.html(build_tts_component_html(letters), height=260, scrolling=True)
 
 # PÁGINA: SESIONES POR TRIMESTRE
 elif page == "Sesiones por trimestre":
