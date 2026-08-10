@@ -241,11 +241,11 @@ _TTS_COMPONENT_TEMPLATE = r"""
       min-height: 20px;
     }
     #tts-list {
-      margin-top: 10px; max-height: 260px; overflow-y: auto;
-      border: 1px solid #e0e0e0; border-radius: 8px;
+      margin: 10px 0 0 0; padding: 0; max-height: 260px; overflow-y: auto;
+      border: 1px solid #e0e0e0; border-radius: 8px; list-style: none;
     }
     .tts-row {
-      padding: 8px 14px; font-size: 14px; color: #333333;
+      display: block; padding: 8px 14px; font-size: 14px; color: #333333;
       border-top: 1px solid #eeeeee;
     }
     .tts-row:first-child { border-top: none; }
@@ -262,7 +262,7 @@ _TTS_COMPONENT_TEMPLATE = r"""
     </div>
   </div>
   <div id="tts-status"></div>
-  <div id="tts-list">__PHRASES_HTML__</div>
+  <ul id="tts-list">__PHRASES_HTML__</ul>
 </div>
 
 <script>
@@ -335,7 +335,7 @@ def build_tts_component_html(letters: list[str]) -> str:
     ritmo y resaltado de la fila que se está leyendo en cada momento."""
     phrases = [f"Respuesta número {i}: {letter}" for i, letter in enumerate(letters, start=1)]
     phrases_html = "".join(
-        f'<div class="tts-row" id="tts-row-{idx}">{phrase}</div>' for idx, phrase in enumerate(phrases)
+        f'<li class="tts-row" id="tts-row-{idx}">{phrase}</li>' for idx, phrase in enumerate(phrases)
     )
 
     html_out = _TTS_COMPONENT_TEMPLATE
