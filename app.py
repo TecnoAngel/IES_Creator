@@ -76,7 +76,7 @@ st.markdown("")
 # st.tabs no conserva la pestaña activa entre reruns (cada clic en un botón
 # devuelve la vista a la primera pestaña), así que la navegación se hace con
 # un widget normal atado a session_state para que sea persistente.
-PAGES = ["Inicio", "Feedback", "Generador de tests", "Sesiones por trimestre", "Programación de aula"]
+PAGES = ["Inicio", "Generador de tests", "Generador de QR"]
 page = st.segmented_control(
     "Navegación",
     PAGES,
@@ -89,77 +89,6 @@ page = st.segmented_control(
 # PÁGINA: INICIO
 if page == "Inicio":
     st.markdown('<div class="panel-card"><h3>Bienvenido</h3><p>Elige una sección arriba para empezar.</p></div>', unsafe_allow_html=True)
-
-# PÁGINA: FEEDBACK DOCX
-elif page == "Feedback":
-    st.markdown('<div class="panel-card"><h3>Feedback</h3><p>Se leerá un archivo Excel y se generará el feedback por alumno: como documentos Word para descargar, o como HTML para copiar y pegar directamente en una plataforma web.</p></div>', unsafe_allow_html=True)
-
-    st.markdown("### Archivos")
-
-    fb_excel = st.file_uploader(
-        "Archivo Excel",
-        type=["xlsx", "xlsm"],
-        key="fb_excel_uploader",
-    )
-
-    st.divider()
-
-    fb_modo = st.radio(
-        "¿Qué quieres generar?",
-        ["Documentos Word", "HTML para copiar y pegar"],
-        horizontal=True,
-        key="fb_modo",
-    )
-
-    if fb_modo == "Documentos Word":
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            if st.button("Generar feedback", use_container_width=True, type="primary", key="btn_gen_feedback"):
-                if fb_excel is None:
-                    st.error("Necesitas subir un archivo Excel válido.")
-                else:
-                    try:
-                        from tools.feedback_app import run_feedback
-
-                        zip_bytes = run_feedback(fb_excel)
-                        st.session_state.fb_zip = zip_bytes
-                        st.success("Proceso completado.")
-                    except Exception as exc:
-                        st.error(f"Error al generar el feedback: {exc}")
-
-        with col2:
-            if st.button("Limpiar", use_container_width=True, key="btn_clear_fb"):
-                st.session_state.pop("fb_zip", None)
-                st.rerun()
-
-        if st.session_state.get("fb_zip"):
-            st.download_button(
-                "Descargar documentos (ZIP)",
-                data=st.session_state.fb_zip,
-                file_name="feedback.zip",
-                mime="application/zip",
-                use_container_width=True,
-            )
-
-    else:
-        st.caption(
-            "Escribe (opcionalmente) una introducción general con formato básico, y pulsa el botón "
-            "de cada alumno para copiar al portapapeles la introducción + su rúbrica en HTML."
-        )
-
-        students = []
-        if fb_excel is not None:
-            try:
-                from tools.feedback_app import read_students_html
-
-                students = read_students_html(fb_excel)
-                st.success(f"{len(students)} alumno(s) detectado(s).")
-            except Exception as exc:
-                st.error(f"Error al leer el Excel: {exc}")
-
-        from tools.feedback_app import build_component_html
-
-        components.html(build_component_html(students), height=700, scrolling=True)
 
 # PÁGINA: GENERADOR DE TESTS
 elif page == "Generador de tests":
@@ -253,195 +182,148 @@ elif page == "Generador de tests":
 
         components.html(build_tts_component_html(letters), height=420, scrolling=True)
 
-# PÁGINA: SESIONES POR TRIMESTRE
-elif page == "Sesiones por trimestre":
-    st.markdown('<div class="panel-card"><h3>Sesiones por trimestre</h3><p>Estima cuántas sesiones lectivas tiene una materia en cada trimestre, a partir del calendario escolar oficial de Castilla y León.</p></div>', unsafe_allow_html=True)
-
-    from tools.sessions_calculator import (
-        DEFAULT_CALENDAR_URL,
-        approx_sessions,
-        default_trimester_ranges,
-        fetch_school_calendar,
-        free_weeks_in_range,
-        trimester_index_for_date,
-    )
-
-    st.caption(
-        "Los selectores de fecha muestran el calendario según el idioma configurado en tu navegador; "
-        "con el navegador en español la semana ya empieza en lunes."
-    )
-
-    st.markdown("### Calendario escolar oficial")
-    calendar_url = st.text_input("URL del calendario escolar (JCyL)", value=DEFAULT_CALENDAR_URL, key="calendar_url")
-
-    if st.button("Cargar calendario oficial", key="btn_load_calendar"):
-        try:
-            calendar = fetch_school_calendar(calendar_url)
-            st.session_state.school_calendar = calendar
-            st.session_state.trimester_dates = dict(zip(("t1", "t2", "t3"), default_trimester_ranges(calendar)))
-            st.success("Calendario cargado correctamente.")
-        except Exception as exc:
-            st.error(f"No se ha podido leer el calendario: {exc}")
-
-    calendar = st.session_state.get("school_calendar")
-
-    if calendar is None:
-        st.info("Carga el calendario oficial para continuar.")
-    else:
-        st.markdown(
-            f"**Curso ESO:** {calendar.course_start:%d/%m/%Y} — {calendar.course_end:%d/%m/%Y}  \n"
-            f"**Vacaciones de Navidad:** {min(calendar.christmas_days):%d/%m/%Y} — {max(calendar.christmas_days):%d/%m/%Y} "
-            f"({len(calendar.christmas_days)} días)  \n"
-            f"**Vacaciones de Semana Santa:** {min(calendar.easter_days):%d/%m/%Y} — {max(calendar.easter_days):%d/%m/%Y} "
-            f"({len(calendar.easter_days)} días)"
-        )
-
-        st.divider()
-        st.markdown("### Trimestres")
-        st.caption("Fechas propuestas automáticamente en torno a Navidad y Semana Santa. Puedes ajustarlas.")
-
-        defaults = st.session_state.get("trimester_dates", {})
-        cols = st.columns(3)
-        trimester_ranges = []
-        for col, key, label in zip(cols, ("t1", "t2", "t3"), ("1º trimestre", "2º trimestre", "3º trimestre")):
-            with col:
-                st.markdown(f"**{label}**")
-                default_start, default_end = defaults.get(key, (calendar.course_start, calendar.course_end))
-                start = st.date_input(
-                    "Inicio", value=default_start,
-                    min_value=calendar.course_start, max_value=calendar.course_end, key=f"{key}_start",
-                )
-                end = st.date_input(
-                    "Fin", value=default_end,
-                    min_value=calendar.course_start, max_value=calendar.course_end, key=f"{key}_end",
-                )
-                trimester_ranges.append((start, end))
-
-        st.divider()
-        st.markdown("### Otros festivos y días no lectivos")
-        st.caption(
-            "Además de Navidad y Semana Santa, marca qué festivos oficiales quieres restar de las semanas "
-            "lectivas (si caen en mitad de la semana, esa semana cuenta como incompleta)."
-        )
-
-        extra_holiday_days: set = set()
-        if not calendar.other_holidays:
-            st.caption("No se han encontrado más festivos en el calendario cargado.")
-        else:
-            for i, group in enumerate(calendar.other_holidays):
-                date_range = (
-                    f"{group.start:%d/%m/%Y}"
-                    if group.start == group.end
-                    else f"{group.start:%d/%m/%Y} – {group.end:%d/%m/%Y}"
-                )
-                label = f"{group.name} ({date_range}, {len(group.days)} día{'s' if len(group.days) != 1 else ''})"
-                checked = st.checkbox(label, value=True, key=f"holiday_{i}")
-                if checked:
-                    extra_holiday_days |= group.days
-
-        st.divider()
-        st.markdown("### Fiesta local")
-        st.caption(
-            "Cada localidad tiene su(s) propia(s) fiesta(s) local(es), que no aparecen en el calendario "
-            "autonómico. Actívala e indica su fecha para restar ese día del trimestre correspondiente."
-        )
-
-        use_local_holiday = st.checkbox("Añadir fiesta local", value=False, key="use_local_holiday")
-        local_holiday_day = None
-        if use_local_holiday:
-            local_holiday_day = st.date_input(
-                "Fecha de la fiesta local",
-                value=calendar.course_start,
-                min_value=calendar.course_start,
-                max_value=calendar.course_end,
-                key="local_holiday_date",
-            )
-            idx = trimester_index_for_date(local_holiday_day, trimester_ranges)
-            if idx is None:
-                st.warning("Esa fecha no cae dentro de ninguno de los trimestres definidos arriba.")
-            else:
-                st.caption(f"Se restará del {idx + 1}º trimestre.")
-
-        st.divider()
-        st.markdown("### Materia")
-        col1, col2 = st.columns(2)
-        with col1:
-            weekly_hours = st.selectbox(
-                "Horas semanales de la materia",
-                options=list(range(1, 11)),
-                index=2,
-                key="weekly_hours",
-            )
-        with col2:
-            safety_pct = st.slider(
-                "Factor de seguridad (% de sesiones que se prevén perder: excursiones, fiestas...)",
-                min_value=0, max_value=50, value=15, step=1, key="safety_factor",
-            )
-        safety_factor = safety_pct / 100
-
-        st.divider()
-        st.markdown("### Resultado")
-
-        total_sessions = 0.0
-        labels = ("1º trimestre", "2º trimestre", "3º trimestre")
-        for t_idx, (label, (start, end)) in enumerate(zip(labels, trimester_ranges)):
-            if end < start:
-                st.warning(f"{label}: la fecha de fin es anterior a la de inicio.")
-                continue
-            holiday_days = calendar.holiday_days | extra_holiday_days
-            if use_local_holiday and local_holiday_day is not None and t_idx == trimester_index_for_date(local_holiday_day, trimester_ranges):
-                holiday_days = holiday_days | {local_holiday_day}
-            weeks = free_weeks_in_range(start, end, holiday_days)
-            sessions = approx_sessions(weeks, weekly_hours, safety_factor)
-            total_sessions += sessions
-            st.markdown(f"**{label}:** {weeks:.1f} semanas netas → **{sessions:.0f} sesiones aprox.**")
-
-        st.markdown(f"#### Total curso: **{total_sessions:.0f} sesiones aprox.**")
-
-# PÁGINA: PROGRAMACIÓN DE AULA
-elif page == "Programación de aula":
-    st.markdown('<div class="panel-card"><h3>Programación de aula</h3><p>Se leerá un Excel con los datos del grupo y las situaciones de aprendizaje, y se generará el documento Word de la programación de aula.</p></div>', unsafe_allow_html=True)
+# PÁGINA: GENERADOR DE QR
+elif page == "Generador de QR":
+    st.markdown('<div class="panel-card"><h3>Generador de QR</h3><p>Se leerá un Excel con columnas ID y CODE y se generará un código QR en PNG por fila, con el ID como nombre de archivo. Puedes elegir el diseño y añadir una imagen en el centro.</p></div>', unsafe_allow_html=True)
 
     st.markdown("### Archivos")
 
-    pa_excel = st.file_uploader(
-        "Excel de datos (hojas 'Datos generales' y 'Situaciones de aprendizaje')",
+    from tools.qr_app import DEFAULT_TEMPLATE
+
+    if DEFAULT_TEMPLATE.exists():
+        st.download_button(
+            "Descargar plantilla Excel (Qr_Template.xlsx)",
+            data=DEFAULT_TEMPLATE.read_bytes(),
+            file_name=DEFAULT_TEMPLATE.name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="btn_qr_template",
+        )
+
+    qr_excel = st.file_uploader(
+        "Archivo Excel (columnas ID y CODE)",
         type=["xlsx", "xlsm"],
-        key="pa_excel_uploader",
+        key="qr_excel_uploader",
     )
-    pa_template = st.file_uploader(
-        "Plantilla Word (opcional, se usará la plantilla por defecto si no se sube)",
-        type=["docx"],
-        key="pa_template_uploader",
+
+    st.divider()
+    st.markdown("### Diseño")
+
+    from tools.qr_app import EYE_STYLES, FILL_STYLES, MODULE_STYLES, PRESETS, QRDesign, create_qr_png_bytes
+
+    qr_preset = st.selectbox("Estilo", list(PRESETS), key="qr_preset")
+    base = QRDesign.from_preset(qr_preset)
+
+    # Las keys llevan el nombre del estilo para que, al cambiarlo, los ajustes
+    # vuelvan a sus valores en lugar de quedarse con los del estilo anterior.
+    with st.expander("Personalizar diseño"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            qr_module = st.selectbox("Forma de los módulos", list(MODULE_STYLES), index=list(MODULE_STYLES).index(base.module), key=f"qr_module_{qr_preset}")
+        with col2:
+            qr_eye = st.selectbox("Forma de las esquinas", list(EYE_STYLES), index=list(EYE_STYLES).index(base.eye), key=f"qr_eye_{qr_preset}")
+        with col3:
+            qr_fill = st.selectbox("Relleno", FILL_STYLES, index=FILL_STYLES.index(base.fill), key=f"qr_fill_{qr_preset}")
+
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            qr_color1 = st.color_picker("Color principal", base.color1, key=f"qr_color1_{qr_preset}")
+        with col2:
+            qr_color2 = st.color_picker("Segundo color (degradados)", base.color2, key=f"qr_color2_{qr_preset}")
+        with col3:
+            qr_back = st.color_picker("Fondo", base.back, key=f"qr_back_{qr_preset}")
+        st.caption("Para que se lea bien, los módulos deben ser bastante más oscuros que el fondo.")
+
+    qr_texture = None
+    if qr_fill == "Textura (imagen)":
+        qr_texture_file = st.file_uploader(
+            "Imagen de textura (sus colores rellenan los módulos; mejor si es oscura)",
+            type=["png", "jpg", "jpeg"],
+            key="qr_texture_uploader",
+        )
+        qr_texture = qr_texture_file.getvalue() if qr_texture_file else None
+
+    qr_logo_file = st.file_uploader(
+        "Imagen para el centro (opcional)",
+        type=["png", "jpg", "jpeg"],
+        key="qr_logo_uploader",
     )
+    qr_logo_ratio = 0.25
+    if qr_logo_file is not None:
+        qr_logo_ratio = st.slider("Tamaño de la imagen central (% del ancho del QR)", 10, 30, 25, key="qr_logo_ratio") / 100
+
+    qr_design = QRDesign(
+        module=qr_module,
+        eye=qr_eye,
+        fill=qr_fill,
+        color1=qr_color1,
+        color2=qr_color2,
+        back=qr_back,
+        logo=qr_logo_file.getvalue() if qr_logo_file else None,
+        logo_ratio=qr_logo_ratio,
+        texture=qr_texture,
+    )
+
+    st.markdown("#### Vista previa")
+    preview_content = "https://www.ejemplo.com"
+    if qr_excel is not None:
+        try:
+            from tools.qr_app import read_qr_rows
+
+            preview_content = read_qr_rows(qr_excel.getvalue())[0][1]
+        except Exception:
+            pass
+
+    try:
+        preview_png = create_qr_png_bytes(preview_content, qr_design)
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            st.image(preview_png, width=240)
+        with col2:
+            st.caption(f"Contenido de la vista previa: {preview_content}")
+            from tools.test_app import decode_qr_image
+
+            try:
+                ok = decode_qr_image(preview_png) == preview_content
+            except Exception:
+                ok = False
+            if ok:
+                st.success("Comprobado: el QR se lee correctamente.")
+            else:
+                st.warning(
+                    "El lector automático no ha podido leer este diseño. Puede funcionar igualmente con el móvil "
+                    "(los diseños artísticos le cuestan más al lector), pero pruébalo antes de imprimir; "
+                    "si no, sube el contraste, reduce la imagen central o usa un estilo más sencillo."
+                )
+    except Exception as exc:
+        st.info(str(exc))
 
     st.divider()
 
     col1, col2 = st.columns([2, 1])
     with col1:
-        if st.button("Generar programación", use_container_width=True, type="primary", key="btn_gen_pa"):
-            if pa_excel is None:
-                st.error("Necesitas subir el Excel de datos.")
+        if st.button("Generar QR", use_container_width=True, type="primary", key="btn_gen_qr"):
+            if qr_excel is None:
+                st.error("Necesitas subir un archivo Excel válido.")
             else:
                 try:
-                    from tools.programacion_aula import run_programacion_aula
+                    from tools.qr_app import run_qr_generation
 
-                    docx_bytes = run_programacion_aula(pa_excel, pa_template)
-                    st.session_state.pa_docx = docx_bytes
+                    zip_bytes = run_qr_generation(qr_excel, qr_design)
+                    st.session_state.qr_zip = zip_bytes
                     st.success("Proceso completado.")
                 except Exception as exc:
-                    st.error(f"Error al generar la programación: {exc}")
+                    st.error(f"Error al generar los QR: {exc}")
 
     with col2:
-        if st.button("Limpiar", use_container_width=True, key="btn_clear_pa"):
-            st.session_state.pop("pa_docx", None)
+        if st.button("Limpiar", use_container_width=True, key="btn_clear_qr"):
+            st.session_state.pop("qr_zip", None)
             st.rerun()
 
-    if st.session_state.get("pa_docx"):
+    if st.session_state.get("qr_zip"):
         st.download_button(
-            "Descargar programación (Word)",
-            data=st.session_state.pa_docx,
-            file_name="programacion_aula.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "Descargar QR (ZIP)",
+            data=st.session_state.qr_zip,
+            file_name="qr.zip",
+            mime="application/zip",
             use_container_width=True,
         )
